@@ -1,0 +1,134 @@
+---
+title: "scraps"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Code chunks that were not used in the final report go here
+
+
+```{r get difference in cumulative status across fiscal years}
+ytd_cumulative_comparisons <-
+  cumulative_counts %>%
+  select(-n) %>%# breaks the pivot
+  pivot_wider(
+    names_from = fiscal_year,
+    values_from = cumulative_status
+  ) %>%
+  mutate(
+    ytd_vs_2019 = `2021-22YTD` - `2019-20`,
+    ytd_vs_2020 = `2021-22YTD` - `2020-21`
+  ) %>%
+  select(
+    fy_status_month, 
+    contains("ytd_vs")
+  ) %>% 
+  pivot_longer(
+    cols = contains("ytd"),
+    names_to = "comparison",
+    values_to = "cumulative_statuses"
+  )
+
+ytd_cumulative_comparisons %>%
+  ggplot(
+    aes(x = fy_status_month,
+        y = cumulative_statuses,
+        color = comparison
+    )
+  ) +
+  geom_line()
+```
+
+```{r get difference in monthly status counts across fiscal years}
+ytd_monthly_comparisons <-
+  cumulative_counts %>%
+  select(-cumulative_status) %>%# breaks the pivot
+  pivot_wider(
+    names_from = fiscal_year,
+    values_from = n
+  ) %>%
+  mutate(
+    ytd_vs_2019 = `2021-22YTD` - `2019-20`,
+    ytd_vs_2020 = `2021-22YTD` - `2020-21`
+  ) %>%
+  select(
+    fy_status_month, 
+    contains("ytd_vs")
+  ) %>% 
+  pivot_longer(
+    cols = contains("ytd"),
+    names_to = "comparison",
+    values_to = "statuses"
+  )
+
+ytd_monthly_comparisons %>%
+  ggplot(
+    aes(x = fy_status_month,
+        y = statuses,
+        color = comparison
+    )
+  ) +
+  geom_line()
+```
+
+```{r get median monthly clients by strata}
+# median_monthly_clients <-
+#   clients_by_strata %>%
+#   group_by(
+#     status,
+#     region,
+#     sector,
+#     fiscal_year
+#   ) %>%
+#   summarize(
+#     median_monthly_clients = median(clients)
+#   )
+```
+
+
+```{r add projected totals to project 2021 2022 totals by strata}
+strata_summary_by_month <- 
+  clients_by_strata %>%
+  # add median column
+  left_join(median_monthly_clients) %>%
+  # replace Feb + March 2022 with medians for each stratum
+  mutate(
+    projected_clients = case_when(
+      fy_status_month %in% c(11, 12) & 
+        fiscal_year == "2021-22YTD" ~ as.integer(median_monthly_clients),
+      TRUE ~ clients
+    )
+  ) 
+```
+
+
+```{r add projected totals to project 2021 2022 totals by strata}
+# strata_summary_by_month <- 
+  clients_by_strata %>%
+  group_by(
+    status, 
+    region, 
+    sector, 
+    fiscal_year
+    ) %>%
+  summarize(
+    prop_of_clients = clients / sum(clients)
+  ) %>%
+  filter(fiscal_year == "2021-22YTD")
+  
+  
+  mutate(
+    projected_per_month = projected_per_month
+  ) %>%
+    # replace Feb + March 2022 with medians for each stratum
+  mutate(
+    projected_clients = case_when(
+      fy_status_month %in% c(11, 12) & 
+        fiscal_year == "2021-22YTD" ~ as.integer(median_monthly_clients),
+      TRUE ~ clients
+    )
+  ) 
+```

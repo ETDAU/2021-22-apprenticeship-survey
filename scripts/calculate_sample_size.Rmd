@@ -1,0 +1,575 @@
+---
+title: "Sample Size Calculation for Apprenticeship Survey"
+description: 
+author:
+  - name: Analytics Unit | Finance, Analysis and Systems Support Branch (FASSB) 
+    url: http://intra.infogo.gov.on.ca/infogo/home.html#orgProfile/113819/en
+    affiliation: Employment and Training Division (ETD) | Ministry of Labour, Training and Skills Development (MLTSD)
+    affiliation_url: 
+date: "`r format(Sys.Date(), '%B %d %Y')`"
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "output") })
+output: 
+  distill::distill_article:
+    toc: TRUE
+    code_folding: FALSE
+editor_options: 
+  chunk_output_type: inline
+---
+
+
+```{r setup, include=FALSE}
+library(tidyverse)
+# library(readxl)
+library(here)
+library(lubridate)
+library(janitor)
+knitr::opts_chunk$set(echo = FALSE)
+options(scipen = 999) 
+
+# Set colours
+cl_maroon <- "#8f103c"
+cl_drk_grn <- "#035951"
+cl_teal <- "#47A6A1"
+cl_blue <- "#047cc2"
+cl_lt_blue <- "#77c1ed"
+
+palette <- c(
+  cl_blue,
+  cl_drk_grn,
+  cl_lt_blue,
+  cl_maroon,
+  cl_teal,
+  "#8f6310"
+)
+
+```
+
+## Overview
+
+The Analytics Unit (AU) was asked to consult on a sampling strategy for a new Apprenticeship Survey.
+In particular, AU was asked to calculate an overall sample size required for a survey of apprentices in 2021-22, stratified by region, sector and completion/cancellation status. 
+This sample size calculation is intended to allow potential vendors to price their bids.  
+
+A previous Invitation to Quote (ITQ) for the 2017-18 fiscal year was provided as an example.
+It indicated an overall sample size (approximately 1,500), and the direction that the vendor should use a sampling strategy that stratifies by sector, region of the province, voluntary/compulsary trade, and completion/cancellation status.  
+
+This report outlines the methods used to determine a potential sample size and sampling strategy for the RFS. 
+It finds that sampling 10% of the eligible apprentices from each stratum will lead to 95% confidence and a margin of error of 3%.
+It also finds that requiring a minimum sample of 10 apprentices from each stratum will improve results with little extra cost. 
+This strategy projects an overall sample size of approximately 1,144 apprentices.
+
+```{r get the data}
+# file is created by scripts/de_identify_data.R
+appr_survey_list_raw <- 
+  read_csv(
+    file = here("data/processed/appr_survey_list.csv")
+  )
+# read_excel(
+#   path = here("data/raw/Appr Survey List 1920-2122YTD.xlsx"),
+#   sheet = "Appr Survey List 1920-2122YTD"
+# )
+
+appr_survey_list <-
+  appr_survey_list_raw %>%
+  # tidy some names
+  janitor::clean_names() %>%
+  # add calculated fields
+  # get monthly count of statuses
+  mutate(status_month = month(status_date)) %>%
+  # adjust months to match fiscal year (i.e. April as fy_status_month == 1)
+  mutate(
+    fy_status_month = case_when(
+      status_month <= 3 ~ status_month + 9,
+      status_month >= 4 ~ status_month - 3
+    )
+  ) 
+
+```
+
+## Projecting 2021-2022 Fiscal Year Apprentice Status counts
+
+Because this report was prepared before the end of FY2021-22, the size of the survey population is not yet known and has to be estimated.
+This section describes the process used to project a population estimate.  
+
+AU was provided with an apprenticeship survey list including details on apprentices from FY 2019-20 through Feb. 3rd, 2022.
+Figure 
+\@ref(fig:compare-fiscal-years)
+illustrates the accumulation of survey-eligible apprentices - exits from apprenticeship, whether by cancellation or completion - for each of these three fiscal years. 
+It also shows a linear model of cumulative apprentice exits by month (the dashed lines).
+Apprenticeship exits for February and March of the two complete fiscal years appear to roughly follow a linear model.
+This suggests that apprentice counts for February and March of 2022 can be projected using linear modelling
+
+```{r compare-fiscal-years, fig.cap="Cumulative Count of Survey-Eligible Apprentices"}
+cumulative_counts <- 
+  appr_survey_list %>%
+  # tally apprentices in each stratum for each month
+  count(fiscal_year, fy_status_month) %>%
+  # add cumulative apprentice counts over a fiscal year
+  group_by(fiscal_year) %>%
+  mutate(
+    # monthly cumulative totals:
+    cumulative_status = cumsum(n),
+    # linear model of apprentice accumulation by month
+    cumulative_model = predict( lm( cumulative_status ~ fy_status_month) )
+  ) 
+
+cumulative_counts %>%
+  # separate actuals and model predictions into different rows
+  pivot_longer(
+    names_to = "type",
+    values_to = "count",
+    cols = starts_with("cumulative_")
+  ) %>%
+  ggplot(
+    aes(
+      x = fy_status_month,
+      y = count,
+      colour = fiscal_year, #interaction(type, fiscal_year),
+      lty = type #interaction(type, fiscal_year)
+    )
+  ) +
+  geom_line() +
+  # display month names instead of numbers
+  scale_x_continuous(
+    name = "Month",
+    breaks = seq( from = 1, to = 12, by = 3),
+    labels = c("April",# "May", "June", 
+               "July", #"August", "September", 
+               "October",# "November", "December", 
+               "January"#, "February", "March"
+    ),
+    # make each panel gridline fall on a month boundary
+    minor_breaks = seq( from = 1, to = 12, by = 1)
+  ) +
+  scale_colour_manual(
+    name = "Fiscal Year",
+    values = palette
+  ) +
+  scale_linetype_manual(
+    name = "Count Type",
+    labels = c("Linear Model", "Actual Count"),
+    values = c(2, 1)
+  ) +
+  scale_y_continuous(
+    name = "Total Apprentices"
+  )
+
+```
+
+Linear models were created for each stratum, predicting the number of apprentices exiting in February and March 2022 by continuing the trend found in the previous 10 months of data.
+The resulting projected total number of apprentices for the current fiscal year is plotted in Figure
+\@ref(fig:projected-fiscal-years)
+.
+
+```{r get clients by strata}
+clients_by_strata <- 
+  appr_survey_list %>%
+  # make month a factor so we know when we're missing one
+  mutate(fy_status_month = as_factor(fy_status_month)) %>%
+  group_by(
+    status,
+    region,
+    sector,
+    fiscal_year,
+    fy_status_month, 
+    .drop = FALSE # fill missing strata with zeroes
+  ) %>%
+  summarize(
+    clients = n()
+  ) %>%
+  # change months back to numeric to prevent headaches later
+  mutate(fy_status_month = as.numeric(fy_status_month))
+
+```
+
+```{r get model of monthly clients by strata}
+projected_monthly_clients <-
+  clients_by_strata %>%
+  group_by(
+    status,
+    region,
+    sector,
+    fiscal_year
+  ) %>%
+  mutate(
+    cumulative_clients = cumsum(clients), # client count
+    median_monthly_clients = median(clients), # median clients per month (for comparison)
+    cumulative_model = predict( lm( cumulative_clients ~ fy_status_month) ), # linear model of client accumulation
+    previous_month = c(0, cumulative_model[1:11]), # current month - previous month == monthly change 
+    model_rise = cumulative_model - previous_month, # monthly change (model rise per month)
+    model_minus_median = model_rise - median_monthly_clients, # for comparison
+    # replace Feb. and March 2022 with linear model prediction 
+    projected_clients = case_when(
+      fy_status_month %in% c(11, 12) & 
+        fiscal_year == "2021-22YTD" ~ as.integer( ceiling(model_rise) ),
+      TRUE ~ clients
+    )
+  ) 
+```
+
+```{r projected-fiscal-years, fig.cap="Cumulative Apprentice Exits with 2022 Projections"}
+cumulative_projections <-
+  projected_monthly_clients %>%
+  group_by(fiscal_year, fy_status_month) %>%
+  summarize(
+    total_projected = sum(projected_clients)
+  ) %>%
+  group_by(fiscal_year) %>%
+  mutate(
+    fy_status_month = as.numeric(fy_status_month),
+    cumulative_projected = cumsum(total_projected),
+    cumulative_model = predict( lm( cumulative_projected ~ fy_status_month ) )
+  )
+
+cumulative_projections  %>%
+  # separate actuals and model predictions into different rows
+  pivot_longer(
+    names_to = "type",
+    values_to = "count",
+    cols = starts_with("cumulative_")
+  ) %>%
+  ggplot(
+    aes(
+      x = as.numeric(fy_status_month),
+      y = count,
+      colour = fiscal_year, #interaction(type, fiscal_year),
+      lty = type #interaction(type, fiscal_year)
+    )
+  ) +
+  geom_line() +
+  # display month names instead of numbers
+  scale_x_continuous(
+    name = "Month",
+    breaks = seq( from = 1, to = 12, by = 3),
+    labels = c("April",# "May", "June", 
+               "July", #"August", "September", 
+               "October",# "November", "December", 
+               "January"#, "February", "March"
+    ),
+    # make each panel gridline fall on a month boundary
+    minor_breaks = seq( from = 1, to = 12, by = 1)
+  ) +
+  scale_colour_manual(
+    name = "Fiscal Year",
+    values = palette
+  ) +
+  scale_linetype_manual(
+    name = "Count Type",
+    labels = c("Linear Model", "Projected Count"),
+    values = c(2, 1)
+  ) +
+  scale_y_continuous(
+    name = "Total Apprentices"
+  )
+```
+
+```{r total projected 2021 2022 apprentices}
+projected_2021_22_total <- 
+  projected_monthly_clients %>%
+  filter(fiscal_year == "2021-22YTD") %>%
+  group_by(
+    fiscal_year
+  ) %>%
+  summarize( projected_total = sum(projected_clients) ) %>%
+  select(projected_total) %>%
+  as.numeric()
+```
+
+The resulting projections add up to a projected survey population of 
+`r formatC(projected_2021_22_total, format = "d", big.mark = ",")`
+people in fiscal year 2021-22.
+
+
+## Sample Size Calculation
+
+### Replication of ITQ Sample Size Calculation
+
+An attempt was made to replicate the sample size calculation performed to support the ITQ.
+This attempt proved unsuccessful.  
+
+```{r get strata estimated totals for this year}
+strata_totals <- 
+  projected_monthly_clients %>%
+  group_by(
+    status,
+    region,
+    sector,
+    fiscal_year
+  ) %>%
+  summarize(
+    projected_stratum_total = sum(projected_clients)
+  )
+```
+
+```{r stats constants}
+# constants
+confidence_level <- 0.95
+margin_of_error <- 0.03
+p <- 0.5 # maximum variability (leads to highest possible value of p(1-p))
+
+# derived values
+alpha <- 1 - confidence_level
+z_score <- qnorm(1 - alpha/2)
+cochran_n0 <- ( p * (1 - p) * z_score ^ 2 ) / (margin_of_error ^ 2)
+```
+
+```{r duplicate itqs work exactly}
+itq_details <- 
+  strata_totals %>%
+  filter(fiscal_year == "2021-22YTD") %>%
+  group_by(region) %>%
+  summarise(region_total = sum(projected_stratum_total)) %>%
+  mutate(
+    percentage = region_total/sum(region_total),
+    std_dev = sqrt( percentage * (1- percentage) ),
+    col_k = region_total * std_dev,
+    weight = col_k / sum( col_k ),
+    col_g = (region_total ^ 2) * percentage * (1 - percentage),
+    col_h = region_total * percentage * (1 - percentage),
+    numer = col_g / weight
+  )
+
+itq_sample_size <- 
+  itq_details %>%
+  ungroup() %>%
+  summarize(
+    total_clients = sum(region_total),
+    total_col_h = sum(col_h),
+    total_numer = sum(numer)
+  ) %>%
+  mutate(
+    final_value = 2 * total_numer / ( (0.03 ^ 2) * (total_clients ^ 2) / (1.96 ^ 2) + total_col_h)
+  )
+
+#the resulting sample size (itq_sample_size$final_value == 1586.817) is *bigger* than the one for the original larger population was
+```
+
+Analysis of the ITQ calculations revealed that the sample size was calculated based on stratification by region only.
+When these calculations were replicated for the projected 2021-22 population, they led to a sample size of 
+`r formatC(itq_sample_size$final_value, , format = "d", big.mark = ",")`.
+This number is *higher* than the sample size calculated for the larger population that was sampled for the ITQ.
+This in turn suggests an oversight in the ITQ calculations.  
+
+```{r redo itqs work on the more detailed strata}
+stratify_then_itq <-
+  strata_totals %>%
+  filter(fiscal_year == "2021-22YTD") %>%
+  ungroup() %>%
+  mutate(
+    percentage = projected_stratum_total / sum(projected_stratum_total),
+    std_dev = sqrt( percentage * (1- percentage) ),
+    col_k = projected_stratum_total * std_dev,
+    weight = col_k / sum( col_k ),
+    col_g = (projected_stratum_total ^ 2) * percentage * (1 - percentage),
+    col_h = projected_stratum_total * percentage * (1 - percentage),
+    numer = col_g / weight,
+    # what if the ITQ's problem was using the wrong percentages?
+    # the columns below calculate the same formula using maximally conservative percentage (p = 0.5)
+    max_std_dev = sqrt( p * (1 - p ) ),
+    max_col_k = projected_stratum_total * std_dev,
+    max_weight = max_col_k / sum( max_col_k ),
+    max_col_g = (projected_stratum_total ^ 2) * p * (1 - p),
+    max_col_h = projected_stratum_total * p * (1 - p),
+    max_numer = max_col_g / max_weight, 
+  )
+
+stratify_then_itq_sample_size <- 
+  stratify_then_itq %>%
+  ungroup() %>%
+  summarize(
+    total_clients = sum(projected_stratum_total),
+    total_col_h = sum(col_h),
+    total_numer = sum(numer),
+    total_max_col_h = sum(max_col_h),
+    total_max_numer = sum(max_numer),
+    
+  ) %>%
+  mutate(
+    final_value = 2 * total_numer / ( (0.03 ^ 2) * (total_clients ^ 2) / (1.96 ^ 2) + total_col_h),
+    max_final_value = 2 * total_max_numer / ( (0.03 ^ 2) * (total_clients ^ 2) / (1.96 ^ 2) + total_max_col_h)
+  )
+# leads to a sample size of 415.1876 ???????
+```
+
+This was confirmed by replicating the calculations using full stratification by region, sector, and status.
+This calculation produced a sample size of
+`r formatC( stratify_then_itq_sample_size$final_value, format = "d", big.mark = "," )`,
+which is clearly too low.  
+
+The oversight may have been caused by using each stratum's relative size in the population in place of the mean value of the survey question responses in the sample size formula. 
+The ITQ formula was again applied to the projected 2021-22 data, but with a conservative estimate for survey question response value. 
+The result was a sample size of 
+`r formatC( stratify_then_itq_sample_size$max_final_value, format = "d", big.mark = "," )`.
+This sample size is likely too large to be practical, and its calculation may not resolve the oversight in the original ITQ's calculations. 
+The use of this sample size is thus not recommended.  
+
+### New Calculations for Sample Size
+
+
+Two broad methods for sample size calculation were considered:  
+
+1. Stratification before sampling: treating each stratum as a population to be sampled
+2. Sampling before stratification: calculating a sample size for the full population, then dividing that sample proportionally into each stratum  
+
+These methods are considered below.
+
+#### Stratification Before Sampling
+
+
+```{r do sample size calculations on each stratum}
+# calculate sample sizes for each stratum
+stratify_first <-
+  strata_totals %>%
+  mutate(
+    stats_how_to = cochran_n0 / (1 + ( (cochran_n0 - 1) / projected_stratum_total ) ),
+    survey_monkey = cochran_n0 / (1 + (cochran_n0 / projected_stratum_total) ),
+    yamane = projected_stratum_total / 
+      ( 1 + projected_stratum_total * (margin_of_error ^ 2) ),
+    formula_diff = stats_how_to - survey_monkey # make sure the two formulas give around the same result
+  )
+```
+
+```{r add up sample sizes of strata}
+sample_sizes <- 
+  stratify_first %>%
+  rename(stratify_first = stats_how_to) %>%
+  group_by( fiscal_year ) %>%
+  summarize( 
+    total_stratify_first = sum(stratify_first),
+    total_projected_clients = sum(projected_stratum_total),
+    total_yamane_stratify_first = sum(yamane),
+    sampling_fraction_stratify_first = total_stratify_first / total_projected_clients,
+    sampling_fraction_yamane_stratify_first = total_yamane_stratify_first / total_projected_clients
+  ) %>%
+  mutate(
+    stats_how_to_sample_first = cochran_n0 / 
+      (1 + ( (cochran_n0 - 1) / total_projected_clients ) ),
+    survey_monkey_sample_first = cochran_n0 / 
+      (1 + (cochran_n0 / total_projected_clients) ),
+    yamane_sample_first = total_projected_clients / 
+      (1 + total_projected_clients * ( margin_of_error ^ 2 )), 
+    sample_first_sampling_fraction = stats_how_to_sample_first / total_projected_clients,
+    yamane_sample_first_sampling_fraction = yamane_sample_first / total_projected_clients,
+    # make sure the two formulas give around the same result:
+    formula_diff_sample_first = stats_how_to_sample_first - survey_monkey_sample_first 
+  ) %>%
+  filter(fiscal_year == "2021-22YTD")
+```
+
+Projected apprentice data were stratified by region, sector, and status, and each stratum was treated as a separate population. 
+Two formulas for sample size were then applied to each stratum: 
+Cochran's formula with modification for small sample sizes, and Yamane's formula.  
+
+Both formulas led to impractically large sample sizes. 
+Cochran's formula determined a sample size of 
+`r formatC( sample_sizes$total_stratify_first, format = "d", big.mark = "," )`,
+or
+`r 100 * round( sample_sizes$sampling_fraction_stratify_first, 2 )`% 
+of the total population. 
+Yamane's formula determined a similar sample size, at 
+`r formatC( sample_sizes$total_yamane_stratify_first, format = "d", big.mark = "," )`,
+or
+`r 100 * round( sample_sizes$sampling_fraction_yamane_stratify_first , 2 )`% 
+of the total population.  
+
+Due to the impracticality of these sample sizes, the stratification-before-sampling approach is not recommended. 
+
+
+#### Sampling Before Stratification
+
+Cochran's and Yamane's formulas were applied to the total projected survey population of apprentices.
+Cochran's formula determined a sample size of
+`r formatC( sample_sizes$stats_how_to_sample_first, format = "d", big.mark = "," )`,
+or
+`r 100 * round( sample_sizes$sample_first_sampling_fraction, 3 )`% 
+of the total population. 
+Yamane's formula determined a similar sample size, at 
+`r formatC( sample_sizes$yamane_sample_first, format = "d", big.mark = "," )`,
+or
+`r 100 * round( sample_sizes$yamane_sample_first_sampling_fraction, 3 )`% 
+of the total population.
+Both of these formulas produce reasonable sample sizes.  
+  
+Due to the uncertainties involved in projection, and for ease of communication, a slightly more conservative sample size of 10% of the population (and thus 10% of each stratum) can be reasonably proposed.
+
+#### Sampling Before Stratification with Strata Miminums
+
+A minimum sample size for all strata can be requested.
+This will increase confidence in the analysis of small strata.
+It will also reduce or eliminate the data suppression required to preserve apprentices' privacy.  
+
+
+```{r get total sample size when we include minimum samples for small cells}
+strata_with_mins <- 
+  strata_totals %>%
+  filter(fiscal_year == "2021-22YTD") %>%
+  left_join(
+    select( 
+      .data = sample_sizes, 
+      fiscal_year, 
+      total_projected_clients,
+      stats_how_to_sample_first,
+      yamane_sample_first
+    )
+  ) %>%
+  mutate(
+    ten_percent = floor(projected_stratum_total * 0.1),
+    sample_first_no_min = ten_percent, #sample_first_no_min = (projected_stratum_total / total_projected_clients) * yamane_sample_first,
+    # the code would be shorter with max() and min(), but then we'd have to use rowwise()
+    sample_first_min_5 = if_else(
+      condition = sample_first_no_min < 5, 
+      true = 5, 
+      false = sample_first_no_min
+    ),
+    sample_first_min_10 = if_else(
+      condition = sample_first_no_min < 10, 
+      true = 10, 
+      false = sample_first_no_min
+    ),
+  )
+```
+
+If 10% of the final population is sampled, the strata listed in Table
+\@ref(tab:small-strata)
+below will have projected sample sizes smaller than 10. 
+
+```{r small-strata}
+strata_with_mins %>%
+  select(
+    Region = region,
+    Sector = sector, 
+    Status = status, 
+    Apprentices = projected_stratum_total,
+    `Sample Size` = sample_first_no_min
+  ) %>%
+  mutate(`Sample Size` = round(`Sample Size`)) %>%
+  filter(`Sample Size` < 10) %>%
+  knitr::kable(
+    caption = "Sample Sizes for Small Strata"
+  )
+```
+
+```{r total strata with stratum minima applied}
+strata_with_mins_summary <- 
+  strata_with_mins %>%
+  group_by(fiscal_year) %>%
+  summarize(
+    sample_first_no_min = ceiling( sum( sample_first_no_min ) ),
+    sample_first_min_5 = ceiling( sum( sample_first_min_5 ) ),
+    sample_first_min_10 = ceiling( sum( sample_first_min_10 ) ),
+  )
+```
+
+If each of these strata have their sample size rounded up to 10, this will add only
+`r strata_with_mins_summary$sample_first_min_10 - strata_with_mins_summary$sample_first_no_min`
+people to the total sample. 
+This suggests that requesting a minimum sample size of 10 for each stratum is reasonable.
+
+## Conclusion
+
+A sample of 10% of the apprentices in each stratum will lead to 95% confidence that the sample is representative, with a margin of error of 3%.
+A requirement for each stratum sample to include at least 10 responses will improve the analysis results while adding only a small number of additional apprentices to the overall sample. 
+
+
+
