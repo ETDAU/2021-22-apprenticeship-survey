@@ -52,12 +52,16 @@ In particular, AU was asked to calculate an overall sample size required for a s
 This sample size calculation is intended to allow potential vendors to price their bids.  
 
 A previous Invitation to Quote (ITQ) for the 2017-18 fiscal year was provided as an example.
-It indicated an overall sample size (approximately 1,500), and the direction that the vendor should use a sampling strategy that stratifies by sector, region of the province, voluntary/compulsary trade, and completion/cancellation status.  
+It indicated an overall sample size (approximately 1,500), and the direction that the vendor should use a sampling strategy that stratifies by sector, region of the province, voluntary/compulsory trade, and completion/cancellation status.  
 
 This report outlines the methods used to determine a potential sample size and sampling strategy for the RFS. 
-It finds that sampling 10% of the eligible apprentices from each stratum will lead to 95% confidence and a margin of error of 3%.
+It finds that sampling 10% of the eligible apprentices from each stratum - that is, 10% from each of the 32 possible combinations of sector, region, and status - will lead to 95% confidence and a margin of error of 3%.
 It also finds that requiring a minimum sample of 10 apprentices from each stratum will improve results with little extra cost. 
 This strategy projects an overall sample size of approximately 1,144 apprentices.
+The projected sample sizes of each of the 32 strata are listed in Table
+\@ref(tab:all-strata)
+in the Appendix below.
+
 
 ```{r get the data}
 # file is created by scripts/de_identify_data.R
@@ -490,7 +494,7 @@ or
 `r 100 * round( sample_sizes$yamane_sample_first_sampling_fraction, 3 )`% 
 of the total population.
 Both of these formulas produce reasonable sample sizes.  
-  
+
 Due to the uncertainties involved in projection, and for ease of communication, a slightly more conservative sample size of 10% of the population (and thus 10% of each stratum) can be reasonably proposed.
 
 #### Sampling Before Stratification with Strata Miminums
@@ -570,6 +574,30 @@ This suggests that requesting a minimum sample size of 10 for each stratum is re
 
 A sample of 10% of the apprentices in each stratum will lead to 95% confidence that the sample is representative, with a margin of error of 3%.
 A requirement for each stratum sample to include at least 10 responses will improve the analysis results while adding only a small number of additional apprentices to the overall sample. 
+This strategy projects an overall sample size of approximately 1,144 apprentices.
+
+## Appendix: Detailed Stratum Projections
+
+Table
+\@ref(tab:all-strata)
+shows the projected number of apprentices with each combination of region, sector, and completion status. 
+It also includes the sample sizes used in calculating the total of 1,144 apprentices.
 
 
-
+```{r all-strata}
+strata_with_mins %>%
+  arrange(region, sector, status) %>%
+  select(
+    Region = region,
+    Sector = sector, 
+    Status = status, 
+    `Projected Apprentices` = projected_stratum_total,
+    `Sample Size` = sample_first_min_10
+  ) %>%
+  mutate(`Sample Size` = round(`Sample Size`)) %>%
+  adorn_totals() %>%
+  # filter(`Sample Size` < 10) %>%
+  knitr::kable(
+    caption = "Projected Sample Sizes for All Strata"
+  )
+```
