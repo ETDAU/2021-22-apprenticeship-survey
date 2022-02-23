@@ -1,0 +1,90 @@
+---
+title: "Completion Rate Puzzle"
+description: |
+  How can a 70:30 ratio of annual completions add up to a 50:50 ratio in an 8-year cohort?
+author:
+  - name: Jill Dilts 
+    url: 
+    affiliation: 
+    affiliation_url: 
+date: "`r Sys.Date()`"
+output: distill::distill_article
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(here)
+library(janitor)
+```
+
+```{r get data from 19 to 22ytd}
+appr_survey_list_raw <- 
+  read_csv( 
+    file = here::here("data/processed/appr_survey_list.csv"))
+
+# tidy list
+appr_survey_list <-
+  appr_survey_list_raw %>%
+  # tidy some names
+  janitor::clean_names() %>%
+  # get fiscal year of registration
+  rename(exit_fiscal_year = fiscal_year) %>%
+  mutate(
+    # use first calendar year of exit fiscal so we can treat it as a number
+    exit_fiscal_year = as.numeric(
+      str_sub(
+        string = exit_fiscal_year,
+        start = 1,
+        end = 4
+      )
+    ),
+    # get fiscal of registration date
+    reg_fiscal_year = as.numeric(
+      str_sub(
+        string = quarter(
+          x = ymd(reg_date),
+          with_year = TRUE,
+          fiscal_start = 4
+        ),
+        start = 1,
+        end = 4
+      )
+    ) - 1, # quarter() calls 2021-04 the start of 2022, but status_date calls it 2021
+    # get length of registration
+    years_since_reg = exit_fiscal_year - reg_fiscal_year
+  ) 
+```
+
+```{r plot exit year vs registration year}
+appr_survey_list %>%
+  ggplot(
+    aes(
+      x = reg_fiscal_year,
+      y = exit_fiscal_year
+    )
+  ) +
+  geom_jitter(
+    alpha = 0.05
+  )
+
+```
+
+```{r plot count of registration years by  exit years}
+appr_survey_list %>%
+  group_by(exit_fiscal_year, years_since_reg) %>%
+  summarize(
+    total_clients = n()
+  ) %>%
+  ggplot(
+    aes(
+      x = years_since_reg,
+      y = total_clients,
+      fill = exit_fiscal_year
+    )
+  ) +
+  geom_col(
+    position = "dodge"
+  )
+```
+

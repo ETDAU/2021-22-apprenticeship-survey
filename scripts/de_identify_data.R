@@ -13,6 +13,7 @@ appr_survey_list_output <-
   appr_survey_list_raw %>%
   select(
     `Fiscal Year`,
+    REG_DATE,
     STATUS_DATE,
     Region,
     SECTOR,

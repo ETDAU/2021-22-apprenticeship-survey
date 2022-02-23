@@ -60,7 +60,7 @@ It also finds that requiring a minimum sample of 10 apprentices from each stratu
 This strategy projects an overall sample size of approximately 1,144 apprentices.
 The projected sample sizes of each of the 32 strata are listed in Table
 \@ref(tab:all-strata)
-in the Appendix below.
+in Appendix A below.
 
 
 ```{r get the data}
@@ -576,7 +576,7 @@ A sample of 10% of the apprentices in each stratum will lead to 95% confidence t
 A requirement for each stratum sample to include at least 10 responses will improve the analysis results while adding only a small number of additional apprentices to the overall sample. 
 This strategy projects an overall sample size of approximately 1,144 apprentices.
 
-## Appendix: Detailed Stratum Projections
+## Appendix A: Detailed Stratum Projections
 
 Table
 \@ref(tab:all-strata)
@@ -599,5 +599,58 @@ strata_with_mins %>%
   # filter(`Sample Size` < 10) %>%
   knitr::kable(
     caption = "Projected Sample Sizes for All Strata"
+  )
+```
+
+### Appendix B: Breakdown by Completion Status
+
+Table \@ref(tab:by-status) below shows exits by cancellation/completion status.
+
+```{r by-status}
+projected_monthly_clients %>%
+  # filter(fiscal_year == "2021-22YTD") %>%
+  # group_by(status) %>%
+  group_by(fiscal_year, status) %>%
+  summarize(
+    ytd_clients = sum(clients),
+    projected_clients = sum(projected_clients)
+  ) %>%
+  adorn_totals() %>%
+  knitr::kable(
+    caption = "Exits by Cancellation/Completion Status across Fiscal Years"
+  )
+
+
+```
+
+### Appendix C: Stratification Without Sector
+
+Because the sample size was estimated *before* stratification, removing sector as a stratification variable will have no effective impact on the recommendation of sampling strategy (10% of each stratum) or the estimated sample size (1,100 - 1,200 completed surveys). 
+Projections of the population and sample from each stratum are listed in Table
+\@ref(tab:no-sector)
+below.
+
+
+```{r no-sector}
+strata_totals <- 
+  projected_monthly_clients %>%
+  group_by(
+    status,
+    region,
+    # sector,
+    fiscal_year
+  ) %>%
+  summarize(
+    projected_stratum_total = sum(projected_clients)
+  ) %>%
+  mutate(
+    projected_sample_size = round(0.10 * projected_stratum_total)
+  )
+
+strata_totals %>%
+  filter(fiscal_year == "2021-22YTD") %>%
+  adorn_totals() %>%
+  knitr::kable(
+    caption = "Projected Strata and 10% Sample Sizes Without Sector"
   )
 ```
